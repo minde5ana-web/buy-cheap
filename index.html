@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="ka">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Buy cheap</title>
+<style>
+  :root { --bg:#fafaf7; --fg:#1c1c1a; --muted:#6b6b66; --card:#fff; --line:#e4e4dd; --accent:#1f7a4d; --best:#e6f4ec; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#17181a; --fg:#ecece8; --muted:#9a9a94; --card:#202225; --line:#33363a; --accent:#4cc38a; --best:#1d3a2c; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, -apple-system, "Noto Sans Georgian", sans-serif; background:var(--bg); color:var(--fg); }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { margin: 0 0 4px; font-size: 28px; }
+  h1 span { color: var(--accent); }
+  .sub { color: var(--muted); margin: 0 0 20px; }
+  .bar { display:flex; gap:8px; flex-wrap:wrap; }
+  input[type=search] { flex:1; min-width:200px; padding:12px 14px; font-size:16px; border:1px solid var(--line); border-radius:10px; background:var(--card); color:var(--fg); }
+  select { padding:12px; font-size:15px; border:1px solid var(--line); border-radius:10px; background:var(--card); color:var(--fg); }
+  .note { margin:14px 0; padding:10px 14px; border-radius:10px; background:var(--card); border:1px solid var(--line); color:var(--muted); font-size:14px; }
+  .tablebox { overflow-x:auto; border:1px solid var(--line); border-radius:12px; background:var(--card); }
+  table { width:100%; border-collapse:collapse; min-width:640px; }
+  th, td { padding:12px 14px; text-align:left; border-bottom:1px solid var(--line); font-size:15px; }
+  th { font-size:13px; color:var(--muted); font-weight:600; }
+  tr:last-child td { border-bottom:none; }
+  tr.best td { background:var(--best); }
+  .badge { display:inline-block; font-size:12px; padding:2px 8px; border-radius:99px; background:var(--accent); color:#fff; margin-left:6px; }
+  a { color:var(--accent); }
+  .num { white-space:nowrap; }
+  .empty { padding:28px; text-align:center; color:var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Buy <span>cheap</span></h1>
+  <p class="sub">მოძებნე პროდუქტი და ნახე სად არის ყველაზე იაფი</p>
+
+  <div class="bar">
+    <input id="q" type="search" placeholder="მაგ: ძაღლის საკვები" autofocus>
+    <select id="sort">
+      <option value="perkg">დალაგება: ფასი 1 კგ-ზე</option>
+      <option value="price">დალაგება: საერთო ფასი</option>
+    </select>
+  </div>
+
+  <div id="note" class="note" hidden></div>
+
+  <div class="tablebox">
+    <table>
+      <thead>
+        <tr><th>პროდუქტი</th><th>მაღაზია</th><th>წონა</th><th>ფასი</th><th>1 კგ-ის ფასი</th><th></th></tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <div id="empty" class="empty" hidden>ვერაფერი მოიძებნა</div>
+  </div>
+</div>
+
+<script>
+// ტესტური მონაცემები. როცა products.json გაჩნდება, საიტი მას გამოიყენებს.
+const SAMPLE = [
+  { name: "ძაღლის საკვები Pedigree მოზრდილი ძაღლებისთვის", store: "Zootopia", weightKg: 3, price: 28.9, url: "#" },
+  { name: "ძაღლის საკვები Pedigree მოზრდილი ძაღლებისთვის", store: "Smartpet", weightKg: 3, price: 26.5, url: "#" },
+  { name: "ძაღლის საკვები Royal Canin Medium", store: "Zoolife", weightKg: 15, price: 189, url: "#" },
+  { name: "ძაღლის საკვები Royal Canin Medium", store: "4pets", weightKg: 4, price: 58, url: "#" },
+  { name: "ძაღლის საკვები Purina Dog Chow", store: "Extra.ge", weightKg: 14, price: 112, url: "#" },
+  { name: "კატის საკვები Whiskas", store: "Veli", weightKg: 1.9, price: 15.5, url: "#" }
+];
+
+let DATA = [];
+let usingSample = false;
+
+const $q = document.getElementById("q");
+const $sort = document.getElementById("sort");
+const $rows = document.getElementById("rows");
+const $empty = document.getElementById("empty");
+const $note = document.getElementById("note");
+
+async function load() {
+  try {
+    const r = await fetch("products.json", { cache: "no-store" });
+    if (!r.ok) throw new Error("no file");
+    const j = await r.json();
+    DATA = j.products || j;
+    if (j.updated) {
+      $note.textContent = "ფასები განახლდა: " + j.updated;
+      $note.hidden = false;
+    }
+  } catch (e) {
+    DATA = SAMPLE;
+    usingSample = true;
+    $note.textContent = "ეს ტესტური მონაცემებია. რეალური ფასები მოგვიანებით დაემატება.";
+    $note.hidden = false;
+  }
+  render();
+}
+
+// ქართული სიტყვების დაბოლოებისთვის ვადარებთ სიტყვის დასაწყისს (ძაღლის ~ ძაღლი)
+function matches(text, query) {
+  const t = text.toLowerCase();
+  const tokens = query.toLowerCase().split(/\s+/).filter(Boolean);
+  return tokens.every(tok => {
+    const stem = tok.length > 4 ? tok.slice(0, tok.length - 2) : tok;
+    return t.includes(stem);
+  });
+}
+
+function fmt(n) { return n.toFixed(2).replace(/\.00$/, "") + " ₾"; }
+
+function render() {
+  const q = $q.value.trim();
+  let list = DATA
+    .map(p => ({ ...p, perKg: p.price / p.weightKg }))
+    .filter(p => !q || matches(p.name + " " + p.store, q));
+
+  const key = $sort.value === "price" ? "price" : "perKg";
+  list.sort((a, b) => a[key] - b[key]);
+
+  $rows.innerHTML = "";
+  $empty.hidden = list.length > 0;
+
+  list.forEach((p, i) => {
+    const tr = document.createElement("tr");
+    if (i === 0) tr.className = "best";
+    const link = p.url && p.url !== "#" ? `<a href="${p.url}" target="_blank" rel="noopener">გახსნა</a>` : "";
+    tr.innerHTML = `
+      <td></td>
+      <td></td>
+      <td class="num">${p.weightKg} კგ</td>
+      <td class="num">${fmt(p.price)}</td>
+      <td class="num"><b>${fmt(p.perKg)}</b></td>
+      <td>${link}</td>`;
+    // ტექსტს textContent-ით ვწერთ უსაფრთხოებისთვის
+    tr.children[0].textContent = p.name;
+    if (i === 0) {
+      const b = document.createElement("span");
+      b.className = "badge";
+      b.textContent = "ყველაზე იაფი";
+      tr.children[0].appendChild(b);
+    }
+    tr.children[1].textContent = p.store;
+    $rows.appendChild(tr);
+  });
+}
+
+$q.addEventListener("input", render);
+$sort.addEventListener("change", render);
+load();
+</script>
+</body>
+</html>
